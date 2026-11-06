@@ -1,0 +1,8 @@
+
+Flask
+easyocr
+opencv-python-headless
+numpy
+Pillow
+PyMuPDF
+gunicorn
