@@ -1,0 +1,373 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+
+    <title>DocuMind AI</title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<nav class="navbar navbar-dark bg-dark px-4">
+
+    <a class="navbar-brand fw-bold" href="/">
+        DocuMind AI
+    </a>
+
+    <span class="text-light">
+        Multilingual Document Intelligence
+    </span>
+
+</nav>
+
+
+<div class="container py-5">
+
+    <div class="row mb-4">
+
+        <div class="col-md-8">
+
+            <h1 class="fw-bold">
+                Smart Document OCR
+            </h1>
+
+            <p class="text-secondary">
+                Upload scanned documents and extract
+                structured information automatically.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="card shadow-sm mb-4">
+
+        <div class="card-body p-4">
+
+            <h4>Upload Document</h4>
+
+            <p class="text-secondary">
+                Supported formats: PDF, JPG, PNG
+            </p>
+
+            <form id="uploadForm">
+
+                <input
+                    type="file"
+                    id="fileInput"
+                    class="form-control mb-3"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    required>
+
+                <button
+                    type="submit"
+                    class="btn btn-primary">
+
+                    Extract Document Data
+
+                </button>
+
+            </form>
+
+            <div id="loading" class="mt-3 d-none">
+
+                Processing document...
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div id="results" class="d-none">
+
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-body">
+
+                <h4>Extracted Information</h4>
+
+                <p class="text-secondary">
+                    Review and correct extracted fields.
+                </p>
+
+                <div id="fields"></div>
+
+                <button
+                    id="saveButton"
+                    class="btn btn-success mt-3">
+
+                    Save Corrections
+
+                </button>
+
+                <a
+                    id="exportButton"
+                    class="btn btn-outline-primary mt-3">
+
+                    Export CSV
+
+                </a>
+
+            </div>
+
+        </div>
+
+
+        <div class="card shadow-sm">
+
+            <div class="card-body">
+
+                <h4>Extracted Text</h4>
+
+                <textarea
+                    id="extractedText"
+                    class="form-control"
+                    rows="12"
+                    readonly></textarea>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+let currentDocumentId = null;
+
+
+document.getElementById("uploadForm")
+.addEventListener("submit", async function(event) {
+
+    event.preventDefault();
+
+    const fileInput =
+        document.getElementById("fileInput");
+
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Please select a document");
+        return;
+    }
+
+    const formData = new FormData();
+
+    formData.append("file", file);
+
+    document.getElementById("loading")
+        .classList.remove("d-none");
+
+    document.getElementById("results")
+        .classList.add("d-none");
+
+    try {
+
+        const response = await fetch("/upload", {
+
+            method: "POST",
+
+            body: formData
+
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error || "Processing failed"
+            );
+
+        }
+
+        currentDocumentId = data.id;
+
+        document.getElementById("extractedText")
+            .value = data.text;
+
+        displayFields(data.fields);
+
+        document.getElementById("exportButton")
+            .href = "/export/" + data.id;
+
+        document.getElementById("results")
+            .classList.remove("d-none");
+
+    } catch (error) {
+
+        alert(error.message);
+
+    } finally {
+
+        document.getElementById("loading")
+            .classList.add("d-none");
+
+    }
+
+});
+
+
+function displayFields(fields) {
+
+    const container =
+        document.getElementById("fields");
+
+    container.innerHTML = "";
+
+    Object.entries(fields).forEach(
+        ([name, field]) => {
+
+            const confidence =
+                Number(field.confidence);
+
+            const needsReview =
+                field.review || confidence < 80;
+
+            const div =
+                document.createElement("div");
+
+            div.className = "field-row mb-3";
+
+            const label =
+                document.createElement("label");
+
+            label.className =
+                "form-label fw-bold";
+
+            label.textContent = name;
+
+            const input =
+                document.createElement("input");
+
+            input.className = "form-control";
+
+            input.value = field.value;
+
+            input.dataset.field = name;
+
+            const info =
+                document.createElement("small");
+
+            info.className =
+                needsReview
+                ? "text-danger"
+                : "text-success";
+
+            info.textContent =
+                "Confidence: " +
+                confidence.toFixed(2) +
+                "% - " +
+                (needsReview
+                    ? "Needs review"
+                    : "High OCR confidence");
+
+            div.appendChild(label);
+
+            div.appendChild(input);
+
+            div.appendChild(info);
+
+            container.appendChild(div);
+
+        }
+    );
+
+}
+
+
+document.getElementById("saveButton")
+.addEventListener("click", async function() {
+
+    if (!currentDocumentId) {
+        alert("Upload a document first");
+        return;
+    }
+
+    const inputs =
+        document.querySelectorAll(
+            "#fields input"
+        );
+
+    const updatedFields = {};
+
+    inputs.forEach(input => {
+
+        const name = input.dataset.field;
+
+        updatedFields[name] = {
+            value: input.value,
+
+            confidence: 100,
+
+            review: false
+        };
+
+    });
+
+    try {
+
+        const response = await fetch(
+            "/review/" + currentDocumentId,
+            {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify(
+                    updatedFields
+                )
+
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error || "Could not save"
+            );
+
+        }
+
+        alert("Corrections saved successfully!");
+
+    } catch (error) {
+
+        alert(error.message);
+
+    }
+
+});
+
+</script>
+
+</body>
+
+</html>
